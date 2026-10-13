@@ -19,7 +19,14 @@ func Handler(source Source) http.Handler {
 	get := handlerMetric(appErrorHandler(getHandler(source)), "fetch")
 	post := handlerMetric(appErrorHandler(postHandler(source)), "upload")
 
+	// TODO: make this configurable
+	limiter := make(chan struct{}, runtime.NumCPU())
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limiter <- struct{}{}
+		defer func() {
+			<-limiter
+		}()
 
 		switch r.Method {
 		case http.MethodGet:
@@ -90,7 +97,7 @@ func getHandler(source Source) appHandler {
 		if err != nil {
 			return &appError{err, "Error transforming image", http.StatusInternalServerError}
 		}
-		compressionRatio.WithLabelValues().Observe(float64(len(img)) / float64(r.ContentLength))
+		compressionRatio.WithLabelValues().Observe(float64(len(img)) / float64(len(buffer)))
 
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", fmt.Sprintf("image/%s", format))
